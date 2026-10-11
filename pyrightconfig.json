@@ -1,0 +1,17 @@
+{
+  "include": [
+    "ml-service"
+  ],
+  "extraPaths": [
+    "ml-service"
+  ],
+  "pythonPath": "C:\\Users\\atul\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+  "executionEnvironments": [
+    {
+      "root": "ml-service",
+      "extraPaths": [
+        "ml-service"
+      ]
+    }
+  ]
+}

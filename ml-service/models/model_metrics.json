@@ -1,0 +1,89 @@
+{
+  "best_model": "MultinomialNB",
+  "metrics": {
+    "accuracy": 0.8333,
+    "precision": 0.75,
+    "recall": 1.0,
+    "f1": 0.8571,
+    "confusion_matrix": [
+      [
+        2,
+        1
+      ],
+      [
+        0,
+        3
+      ]
+    ]
+  },
+  "all_model_evaluations": {
+    "LogisticRegression": {
+      "accuracy": 0.5,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "confusion_matrix": [
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          3
+        ]
+      ]
+    },
+    "PassiveAggressive": {
+      "accuracy": 0.6667,
+      "precision": 0.6,
+      "recall": 1.0,
+      "f1": 0.75,
+      "confusion_matrix": [
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          3
+        ]
+      ]
+    },
+    "MultinomialNB": {
+      "accuracy": 0.8333,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571,
+      "confusion_matrix": [
+        [
+          2,
+          1
+        ],
+        [
+          0,
+          3
+        ]
+      ]
+    },
+    "RandomForest": {
+      "accuracy": 0.5,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "confusion_matrix": [
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          3
+        ]
+      ]
+    }
+  },
+  "dataset_samples": 20,
+  "train_samples": 14,
+  "test_samples": 6,
+  "features": "TF-IDF (1-2 ngrams, 5000 features)"
+}

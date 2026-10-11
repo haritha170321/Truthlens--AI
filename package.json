@@ -1,0 +1,14 @@
+{
+  "name": "fake-news-detector-fullstack",
+  "version": "1.0.0",
+  "description": "Full-Stack AIML Fake News Detector with Explainable Verification & Evidence Matching",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:ml": "cd ml-service && py -m uvicorn app.main:app --reload --port 8000",
+    "train:ml": "cd ml-service && py training/train_model.py"
+  },
+  "keywords": ["aiml", "nlp", "fake-news-detection", "full-stack", "fastapi", "react", "express"],
+  "author": "TruthGuard Team",
+  "license": "MIT"
+}

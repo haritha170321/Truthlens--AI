@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables & secrets (CRITICAL: Do not commit API keys)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# Build outputs & caches
+dist/
+build/
+.cache/
+*.log
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
