@@ -63,3 +63,9 @@ export const deleteSavedArticle = async (id) => {
   const response = await api.delete(`/saved/${id}`);
   return response.data;
 };
+
+export const searchGoogleFactCheck = async (query, languageCode = 'en') => {
+  const response = await api.post('/news/fact-check-search', { query, languageCode });
+  return response.data;
+};
+

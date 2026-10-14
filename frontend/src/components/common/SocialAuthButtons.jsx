@@ -9,110 +9,164 @@ export const SocialAuthButtons = ({ mode = 'login' }) => {
   const [authError, setAuthError] = useState('');
   const googleBtnRef = useRef(null);
 
-  // Client ID from environment or prompt setup
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  // Client ID from environment configuration
+  const rawClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const isConfigured = Boolean(
+    rawClientId &&
+    !rawClientId.includes('your-google-client-id') &&
+    !rawClientId.includes('YOUR_GOOGLE_CLIENT_ID') &&
+    !rawClientId.startsWith('<')
+  );
+  const googleClientId = isConfigured ? rawClientId : '';
 
   // Initialize Google Identity Services if client ID is set
   useEffect(() => {
-    if (window.google?.accounts?.id && googleClientId) {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: googleClientId,
-          callback: async (response) => {
-            if (response.credential) {
-              setSocialLoading('google');
-              const res = await loginWithGoogle({ credential: response.credential });
-              if (res.success) {
-                navigate('/dashboard');
-              } else {
-                setAuthError(res.message || 'Google authentication failed.');
-              }
-              setSocialLoading(null);
-            }
-          },
-        });
+    if (!googleClientId) return;
 
-        if (googleBtnRef.current) {
-          window.google.accounts.id.renderButton(googleBtnRef.current, {
-            theme: 'outline',
-            size: 'large',
-            width: '100%',
-            text: mode === 'signup' ? 'signup_with' : 'signin_with',
-            shape: 'pill',
+    let timer;
+    const initGsi = () => {
+      if (window.google?.accounts?.id) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: async (response) => {
+              if (response.credential) {
+                setSocialLoading('google');
+                const res = await loginWithGoogle({ credential: response.credential });
+                if (res.success) {
+                  navigate('/dashboard');
+                } else {
+                  setAuthError(res.message || 'Google authentication failed.');
+                }
+                setSocialLoading(null);
+              }
+            },
           });
+
+          if (googleBtnRef.current) {
+            window.google.accounts.id.renderButton(googleBtnRef.current, {
+              theme: 'outline',
+              size: 'large',
+              width: '100%',
+              text: mode === 'signup' ? 'signup_with' : 'signin_with',
+              shape: 'pill',
+            });
+          }
+          return true;
+        } catch (err) {
+          console.warn('Google Identity initialization error:', err);
+          return true;
         }
-      } catch (err) {
-        console.warn('Google Identity initialization error:', err);
       }
+      return false;
+    };
+
+    if (!initGsi()) {
+      let attempts = 0;
+      timer = setInterval(() => {
+        attempts++;
+        if (initGsi() || attempts > 30) {
+          clearInterval(timer);
+        }
+      }, 100);
     }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [googleClientId, mode]);
 
-  const handleGoogleOAuthPopup = () => {
+  const ensureGoogleLoaded = async () => {
+    if (window.google?.accounts?.oauth2) return true;
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (window.google?.accounts?.oauth2) return true;
+    }
+    return false;
+  };
+
+  const handleGoogleOAuthPopup = async () => {
     setAuthError('');
+
+    if (!isConfigured) {
+      setAuthError(
+        'Google Client ID is not configured. Please add your real VITE_GOOGLE_CLIENT_ID in frontend/.env to enable Google Sign-In.'
+      );
+      return;
+    }
+
     setSocialLoading('google');
 
-    if (!googleClientId) {
-      setAuthError('Please set VITE_GOOGLE_CLIENT_ID in your frontend/.env file.');
+    const loaded = await ensureGoogleLoaded();
+    if (!loaded) {
+      setAuthError('Could not load Google Sign-In service. Please check your connection or disable ad blockers.');
       setSocialLoading(null);
       return;
     }
 
-    if (window.google?.accounts?.oauth2) {
-      try {
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: googleClientId,
-          scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid',
-          callback: async (tokenResponse) => {
-            if (tokenResponse?.access_token) {
-              try {
-                const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                const googleData = await userInfoRes.json();
+    try {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId,
+        scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse?.error) {
+            setSocialLoading(null);
+            setAuthError(`Google error: ${tokenResponse.error_description || tokenResponse.error}`);
+            return;
+          }
 
-                const res = await loginWithGoogle({
-                  email: googleData.email,
-                  name: googleData.name,
-                  picture: googleData.picture,
-                  googleId: googleData.sub,
-                });
+          if (tokenResponse?.access_token) {
+            try {
+              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              });
 
-                if (res.success) {
-                  navigate('/dashboard');
-                } else {
-                  setAuthError(res.message || 'Failed to authenticate Google user.');
-                }
-              } catch (e) {
-                setAuthError('Could not fetch Google profile data.');
+              if (!userInfoRes.ok) {
+                throw new Error(`Google API returned HTTP ${userInfoRes.status}`);
               }
+
+              const googleData = await userInfoRes.json();
+
+              const res = await loginWithGoogle({
+                accessToken: tokenResponse.access_token,
+                email: googleData.email,
+                name: googleData.name,
+                picture: googleData.picture,
+                googleId: googleData.sub,
+              });
+
+              if (res.success) {
+                navigate('/dashboard');
+              } else {
+                setAuthError(res.message || 'Failed to authenticate Google user.');
+              }
+            } catch (e) {
+              console.error('Google profile fetch error:', e);
+              setAuthError('Could not fetch Google profile data.');
+            } finally {
+              setSocialLoading(null);
             }
+          } else {
             setSocialLoading(null);
-          },
-          error_callback: (err) => {
-            console.error('Google OAuth error:', err);
-            setAuthError('Google sign-in was closed or failed.');
-            setSocialLoading(null);
-          },
-        });
+          }
+        },
+        error_callback: (err) => {
+          console.error('Google OAuth error:', err);
+          setSocialLoading(null);
+          if (err?.type === 'popup_closed') {
+            setAuthError('Google sign-in popup was closed.');
+          } else if (err?.type === 'access_denied') {
+            setAuthError('Google sign-in was cancelled.');
+          } else {
+            setAuthError(err?.message || 'Google sign-in was closed or failed.');
+          }
+        },
+      });
 
-        client.requestAccessToken();
-        return;
-      } catch (err) {
-        console.error('Google token client initialization error:', err);
-      }
-    }
-
-    // Direct Google OAuth 2.0 Web Popup fallback
-    const redirectUri = `${window.location.origin}/login`;
-    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
-      googleClientId
-    )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(
-      'openid email profile'
-    )}&prompt=select_account`;
-
-    const popup = window.open(googleAuthUrl, 'google_oauth_window', 'width=500,height=600');
-    if (!popup) {
-      setAuthError('Popup blocked by browser. Please allow popups.');
+      client.requestAccessToken();
+    } catch (err) {
+      console.error('Google token client initialization error:', err);
+      setAuthError('Failed to initialize Google Sign-In. Please check your client configuration.');
       setSocialLoading(null);
     }
   };

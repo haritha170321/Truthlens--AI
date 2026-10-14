@@ -23,6 +23,7 @@ import {
   Scale,
   Clock,
   MessageSquare,
+  Search,
 } from 'lucide-react';
 import StatusBadge from '../components/common/StatusBadge';
 import ConfidenceGauge from '../components/common/ConfidenceGauge';
@@ -32,6 +33,7 @@ import IndicatorsCard from '../components/result/IndicatorsCard';
 import SourceCredibilityCard from '../components/result/SourceCredibilityCard';
 import SimilarArticlesCard from '../components/result/SimilarArticlesCard';
 import SimilarClaimsCard from '../components/result/SimilarClaimsCard';
+import GoogleFactCheckCard from '../components/result/GoogleFactCheckCard';
 import SpatialEvidenceGraph from '../components/result/SpatialEvidenceGraph';
 import InteractiveEvidenceComparison from '../components/result/InteractiveEvidenceComparison';
 import PublicationTimeline from '../components/result/PublicationTimeline';
@@ -297,6 +299,17 @@ export const AnalysisResultPage = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('google_factcheck')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'google_factcheck'
+              ? 'bg-sky-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+          }`}
+        >
+          <Search className="w-4 h-4" /> Google Fact Check Tools ({analysis.googleFactCheck?.reviews?.length || 0})
+        </button>
+
+        <button
           onClick={() => setActiveTab('timeline')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
             activeTab === 'timeline'
@@ -324,6 +337,13 @@ export const AnalysisResultPage = () => {
 
       {activeTab === 'similar_claims' && (
         <SimilarClaimsCard similarClaims={analysis.similarClaims || []} />
+      )}
+
+      {activeTab === 'google_factcheck' && (
+        <GoogleFactCheckCard
+          initialFactCheck={analysis.googleFactCheck}
+          defaultQuery={analysis.headline || (analysis.claims && analysis.claims[0]?.claim) || analysis.content?.substring(0, 100)}
+        />
       )}
 
       {activeTab === 'timeline' && (
@@ -381,6 +401,14 @@ export const AnalysisResultPage = () => {
           <EvidencePanel
             supporting={analysis.supportingEvidence || []}
             contradicting={analysis.contradictingEvidence || []}
+            context={analysis.contextEvidence || []}
+            searchMetadata={analysis.searchMetadata}
+          />
+
+          {/* Google Fact Check Tools Registry Dossier */}
+          <GoogleFactCheckCard
+            initialFactCheck={analysis.googleFactCheck}
+            defaultQuery={analysis.headline || (analysis.claims && analysis.claims[0]?.claim) || analysis.content?.substring(0, 100)}
           />
         </div>
 

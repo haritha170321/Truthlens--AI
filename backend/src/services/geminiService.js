@@ -1,4 +1,5 @@
 const axios = require('axios');
+const SourceMatcher = require('./sourceMatcher');
 
 class GeminiService {
   /**
@@ -115,9 +116,38 @@ Respond ONLY in valid JSON format with this exact JSON structure:
             if (responseText) {
               const parsed = JSON.parse(responseText);
               console.log(`[Gemini API] Successfully analyzed with ${model}. Verdict: ${parsed.llmVerdict}`);
+              
+              // Ensure external news articles are merged into evidence if not already present
+              const matched = SourceMatcher.matchSourcesToClaims(claims, externalNews);
+              const mergedSupporting = [...(parsed.supportingEvidence || [])];
+              const mergedContradicting = [...(parsed.contradictingEvidence || [])];
+              const mergedContext = [...(parsed.contextEvidence || [])];
+
+              matched.supportingEvidence.forEach(e => {
+                if (!mergedSupporting.some(s => s.url === e.url || s.title === e.title)) {
+                  mergedSupporting.push(e);
+                }
+              });
+              matched.contradictingEvidence.forEach(e => {
+                if (!mergedContradicting.some(s => s.url === e.url || s.title === e.title)) {
+                  mergedContradicting.push(e);
+                }
+              });
+              matched.contextEvidence.forEach(e => {
+                if (!mergedContext.some(s => s.url === e.url || s.title === e.title)) {
+                  mergedContext.push(e);
+                }
+              });
+
               return {
                 source: model,
                 ...parsed,
+                supportingEvidence: mergedSupporting,
+                contradictingEvidence: mergedContradicting,
+                contextEvidence: mergedContext,
+                verifiedClaims: (parsed.verifiedClaims && parsed.verifiedClaims.length > 0)
+                  ? parsed.verifiedClaims
+                  : matched.updatedClaims,
               };
             }
             break;
@@ -134,12 +164,12 @@ Respond ONLY in valid JSON format with this exact JSON structure:
       }
     }
 
-    // Fallback AI Reasoning Engine (Heuristic + Rule Knowledge Base)
-    console.log('[AI Engine] Using resilient local reasoning fallback.');
-    return GeminiService.generateLocalReasoningFallback({ headline, content, publisher, claims });
+    // Fallback AI Reasoning Engine (Heuristic + Evidence-Based Knowledge Base)
+    console.log('[AI Engine] Using resilient local reasoning fallback with external source matching.');
+    return GeminiService.generateLocalReasoningFallback({ headline, content, publisher, claims, externalNews });
   }
 
-  static generateLocalReasoningFallback({ headline, content, publisher, claims }) {
+  static generateLocalReasoningFallback({ headline, content, publisher, claims = [], externalNews = [] }) {
     const text = `${headline} ${content}`.toLowerCase();
 
     // High suspicion cues
@@ -149,54 +179,78 @@ Respond ONLY in valid JSON format with this exact JSON structure:
     let isFake = conspiracyCues.some(cue => text.includes(cue));
     let isReal = reliableCues.some(cue => text.includes(cue));
 
+    // Ensure claims has at least one entry if none passed
+    const claimItems = (claims && claims.length > 0)
+      ? claims
+      : [{ claim: headline || content.substring(0, 140), type: 'Factual Assertion' }];
+
+    // Perform factual matching against retrieved external sources
+    const matchResult = SourceMatcher.matchSourcesToClaims(claimItems, externalNews);
+    const verifiedClaims = matchResult.updatedClaims;
+    const supportingEvidence = matchResult.supportingEvidence;
+    const contradictingEvidence = matchResult.contradictingEvidence;
+    const contextEvidence = matchResult.contextEvidence;
+
     let verdict = 'UNVERIFIED';
-    let score = 55;
-    let summary = 'The article discusses notable claims that require cross-source verification.';
+    let score = 50;
+    let summary = 'The statement could not be fully verified because no authoritative corroborating records were retrieved.';
     let factors = [
-      'Content evaluated via linguistic heuristics and factual pattern analysis.',
-      'Claim structures checked for logical coherence and sensationalism indicators.',
+      'Cross-source database search executed across encyclopedic registries and news indexes.',
+      'Claim structures checked for logical coherence, temporal markers, and verification anchors.',
     ];
     let recommendations = [
-      'Cross-check key statements with established primary news wires (e.g. AP, Reuters).',
-      'Verify if official government or academic registries corroborate any scientific assertions.',
+      'Cross-check key statements with primary official portals or verified wire services.',
+      'Awaiting secondary independent confirmation before treating this assertion as established fact.',
     ];
 
-    if (isFake) {
+    if (contradictingEvidence.length > 0 || isFake) {
       verdict = 'LIKELY FAKE';
       score = 15;
-      summary = 'The article contains extraordinary or conspiracy-style assertions with extreme sensationalism and no verifiable scientific attribution.';
+      summary = `The claim is contradicted by ${contradictingEvidence.length} verified source(s), including ${contradictingEvidence[0]?.source || 'authoritative records'}.`;
       factors = [
-        'Sensational claims lacking empirical or clinical backing.',
-        'Uses classic engagement-hook hyperbole and urgent manipulative phrasing.',
-        'Similar patterns have been repeatedly debunked by international fact-checking coalitions.',
+        `Direct contradictions identified in published documentation (${contradictingEvidence[0]?.title || 'Debunk archive'}).`,
+        'Assertion conflicts with established empirical or historical facts.',
+        'Similar misinformation patterns have been disproven by fact-check standards.',
       ];
       recommendations = [
-        'Do not share this post as factual reporting.',
-        'Consult verified medical and scientific institutions for authoritative information.',
+        'Do not share this assertion as factual reporting.',
+        'Consult official registries or primary historical records for accurate details.',
+      ];
+    } else if (supportingEvidence.length > 0) {
+      verdict = 'REAL';
+      score = Math.min(95, 80 + supportingEvidence.length * 6);
+      summary = `Corroborated by ${supportingEvidence.length} authoritative source(s), including ${supportingEvidence[0]?.source} ("${supportingEvidence[0]?.title}"). The assertion is factually confirmed.`;
+      factors = [
+        `Primary institutional records from ${supportingEvidence[0]?.source} directly corroborate the assertion.`,
+        'No conflicting claims or debunking notices found across scanned indexes.',
+        'Consistent with historical and official governmental documentation.',
+      ];
+      recommendations = [
+        'The statement is supported by public authoritative records.',
       ];
     } else if (isReal) {
       verdict = 'LIKELY REAL';
-      score = 88;
-      summary = 'The article exhibits balanced objective terminology, citing institutional bodies and consistent real-world occurrences.';
+      score = 82;
+      summary = 'The article exhibits balanced objective terminology citing recognizable institutional entities.';
       factors = [
         'Contextual attribution to recognizable institutions and standard reporting formats.',
-        'Absence of extreme clickbait triggers or emotional manipulative shouting.',
-        'Terminology is aligned with standard factual press releases.',
+        'Absence of extreme sensationalism triggers or emotionally manipulative phrasing.',
       ];
       recommendations = [
-        'While reliable, always verify breaking stories as developing details emerge.',
+        'While reliable, check official sources as developing details emerge.',
+      ];
+    } else if (contextEvidence.length > 0) {
+      verdict = 'UNVERIFIED';
+      score = 55;
+      summary = `Topical background context was found in ${contextEvidence.length} external source(s), but specific corroborating proof for the exact assertion awaits direct confirmation.`;
+      factors = [
+        `Topical reference found in ${contextEvidence[0]?.title}.`,
+        'Assertion lacks explicit direct confirmation in retrieved snippets.',
+      ];
+      recommendations = [
+        'Consult primary source archives for direct proof.',
       ];
     }
-
-    const verifiedClaims = (claims || []).map((c, idx) => ({
-      claim: c.claim || `Claim #${idx + 1}`,
-      type: c.type || 'Factual Assertion',
-      status: isFake ? 'Contradicted' : (isReal ? 'Supported' : 'Unverified'),
-      evidence: isFake
-        ? 'Contradicted by established scientific literature and official documentation.'
-        : (isReal ? 'Corroborated by standard institutional communiques and factual reporting.' : 'Awaiting independent secondary confirmation.'),
-      confidence: isFake ? 0.90 : (isReal ? 0.88 : 0.60),
-    }));
 
     return {
       source: 'rule-based-reasoning-engine',
@@ -208,11 +262,14 @@ Respond ONLY in valid JSON format with this exact JSON structure:
         {
           claim: headline || content.substring(0, 100),
           type: 'Central Thesis',
-          status: isFake ? 'Contradicted' : (isReal ? 'Supported' : 'Unverified'),
+          status: supportingEvidence.length > 0 ? 'Supported' : (contradictingEvidence.length > 0 ? 'Contradicted' : 'Unverified'),
           evidence: summary,
-          confidence: 0.80,
+          confidence: supportingEvidence.length > 0 ? 0.90 : 0.60,
         },
       ],
+      supportingEvidence,
+      contradictingEvidence,
+      contextEvidence,
       recommendations,
     };
   }

@@ -4,6 +4,7 @@ const GeminiService = require('../services/geminiService');
 const NewsApiService = require('../services/newsApiService');
 const ScraperService = require('../services/scraperService');
 const HybridScorer = require('../services/hybridScorer');
+const GoogleFactCheckService = require('../services/googleFactCheckService');
 const { sampleCases } = require('../utils/sampleCases');
 const { getDBStatus } = require('../config/db');
 const { memoryStore } = require('../utils/seedData');
@@ -46,6 +47,23 @@ const executeVerificationPipeline = async ({
     content.substring(0, 150),
     headline
   );
+
+  // Step 3.5: Google Fact Check Tools API Search
+  const factCheckQuery = (extractedClaims && extractedClaims[0]?.claim) || headline || (content ? content.substring(0, 120) : '');
+  let googleFactCheck = null;
+  try {
+    googleFactCheck = await GoogleFactCheckService.searchClaims(factCheckQuery, detectedLanguage);
+  } catch (gfcErr) {
+    googleFactCheck = {
+      success: false,
+      status: 'ERROR',
+      query: factCheckQuery,
+      message: `Google Fact Check API error: ${gfcErr.message}`,
+      reviews: [],
+      totalResults: 0,
+      configured: false,
+    };
+  }
 
   // Step 4: AI Reasoning and Claim Stance Determination
   const llmAnalysis = await GeminiService.analyzeNewsContent({
@@ -124,6 +142,8 @@ const executeVerificationPipeline = async ({
     supportingEvidence: hybridResult.supportingEvidence,
     contradictingEvidence: hybridResult.contradictingEvidence,
     contextEvidence: hybridResult.contextEvidence || [],
+    searchMetadata: externalNews?.searchMetadata || null,
+    googleFactCheck,
     similarClaims,
     similarArticles,
     sourceCredibility,
@@ -428,3 +448,26 @@ exports.getMethodology = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.searchGoogleFactCheck = async (req, res, next) => {
+  try {
+    const query = req.body?.query || req.query?.query || req.body?.claim || req.query?.claim;
+    const languageCode = req.body?.languageCode || req.query?.languageCode || 'en';
+
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({
+        success: false,
+        status: 'INVALID_QUERY',
+        message: 'Please provide a non-empty claim text or keyword query to search.',
+        reviews: [],
+        totalResults: 0,
+      });
+    }
+
+    const result = await GoogleFactCheckService.searchClaims(query, languageCode);
+    return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+

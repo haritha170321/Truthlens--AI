@@ -97,12 +97,20 @@ class HybridScorer {
           publishedDate: art.date || 'Recent',
           reliability: 0.90,
         };
-        if (art.stance === 'SUPPORTS' && !supportingEvidence.some(e => e.title === art.title)) {
-          supportingEvidence.push({ ...item, stance: 'SUPPORTS' });
-        } else if (art.stance === 'CONTRADICTS' && !contradictingEvidence.some(e => e.title === art.title)) {
-          contradictingEvidence.push({ ...item, stance: 'CONTRADICTS' });
-        } else {
-          contextEvidence.push({ ...item, stance: 'CONTEXT' });
+        if (art.stance === 'SUPPORTS') {
+          if (!supportingEvidence.some(e => e.title === art.title || (art.url && e.url === art.url))) {
+            supportingEvidence.push({ ...item, stance: 'SUPPORTS' });
+          }
+        } else if (art.stance === 'CONTRADICTS') {
+          if (!contradictingEvidence.some(e => e.title === art.title || (art.url && e.url === art.url))) {
+            contradictingEvidence.push({ ...item, stance: 'CONTRADICTS' });
+          }
+        } else if (art.stance === 'CONTEXT') {
+          if (!contextEvidence.some(e => e.title === art.title || (art.url && e.url === art.url)) &&
+              !supportingEvidence.some(e => e.title === art.title || (art.url && e.url === art.url)) &&
+              !contradictingEvidence.some(e => e.title === art.title || (art.url && e.url === art.url))) {
+            contextEvidence.push({ ...item, stance: 'CONTEXT' });
+          }
         }
       });
     }
@@ -122,7 +130,7 @@ class HybridScorer {
           contradictingEvidence.push({ ...item, stance: 'CONTRADICTS' });
         } else if (sc.stance === 'SUPPORTS' && !supportingEvidence.some(e => e.url === sc.url)) {
           supportingEvidence.push({ ...item, stance: 'SUPPORTS' });
-        } else if (sc.stance === 'CONTEXT' && !contextEvidence.some(e => e.url === sc.url)) {
+        } else if (sc.stance === 'CONTEXT' && !contextEvidence.some(e => e.url === sc.url) && !supportingEvidence.some(e => e.url === sc.url)) {
           contextEvidence.push({ ...item, stance: 'CONTEXT' });
         }
       });
@@ -167,26 +175,26 @@ class HybridScorer {
       confidenceLevel = 'Conflicting Evidence Identified';
       confidenceScore = Math.max(82, 100 - compositeReliabilityIndex);
       uncertaintyScore = 15;
-    } else if (supportingEvidence.length >= 1 && contradictingEvidence.length === 0 && (compositeReliabilityIndex >= 70 || llmVerdict === 'REAL')) {
+    } else if (supportingEvidence.length >= 1 && contradictingEvidence.length === 0 && (compositeReliabilityIndex >= 60 || llmVerdict === 'REAL' || llmVerdict === 'LIKELY REAL')) {
       outcomeCategory = 'Supporting evidence found';
       confidenceLevel = 'Supporting Evidence Corroborated';
       confidenceScore = Math.max(80, compositeReliabilityIndex);
       uncertaintyScore = 15;
-    } else if (contextEvidence.length > 0 || llmVerdict === 'MISLEADING' || (compositeReliabilityIndex > 30 && compositeReliabilityIndex <= 55)) {
-      outcomeCategory = 'Context required';
-      confidenceLevel = 'Nuanced Context Required';
-      confidenceScore = Math.max(75, 100 - compositeReliabilityIndex);
-      uncertaintyScore = 30;
-    } else if (supportingEvidence.length === 0 && contradictingEvidence.length === 0 && compositeReliabilityIndex === 50) {
-      outcomeCategory = 'Unable to verify';
-      confidenceLevel = 'Unverifiable Claim Assertions';
-      confidenceScore = 40;
-      uncertaintyScore = 65;
-    } else {
+    } else if (supportingEvidence.length === 0 && contradictingEvidence.length === 0 && contextEvidence.length === 0) {
       outcomeCategory = 'Insufficient evidence';
       confidenceLevel = 'Insufficient Published Corroboration';
       confidenceScore = 50;
       uncertaintyScore = 50;
+    } else if (contextEvidence.length > 0 || llmVerdict === 'MISLEADING') {
+      outcomeCategory = 'Context required';
+      confidenceLevel = 'Nuanced Context Required';
+      confidenceScore = Math.max(75, 100 - compositeReliabilityIndex);
+      uncertaintyScore = 30;
+    } else {
+      outcomeCategory = 'Unable to verify';
+      confidenceLevel = 'Unverifiable Claim Assertions';
+      confidenceScore = 40;
+      uncertaintyScore = 65;
     }
 
     return {

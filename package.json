@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Full-Stack AIML Fake News Detector with Explainable Verification & Evidence Matching",
   "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && npm start",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:ml": "cd ml-service && py -m uvicorn app.main:app --reload --port 8000",

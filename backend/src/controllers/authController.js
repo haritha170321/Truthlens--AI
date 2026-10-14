@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const User = require('../models/User');
 const { getDBStatus } = require('../config/db');
 const { memoryStore } = require('../utils/seedData');
@@ -202,30 +203,76 @@ exports.getMe = async (req, res, next) => {
 
 exports.googleLogin = async (req, res, next) => {
   try {
-    const { credential, email, name, picture, googleId } = req.body;
+    const { credential, accessToken, email, name, picture, googleId } = req.body;
 
-    let userEmail = email;
-    let userName = name;
-    let userAvatar = picture;
-    let gId = googleId;
+    let userEmail = null;
+    let userName = 'Google User';
+    let userAvatar = '';
+    let gId = null;
 
-    // If Google JWT credential was provided from Google One Tap / Google Identity Services
+    const expectedClientId = process.env.GOOGLE_CLIENT_ID || '';
+
+    // 1. Verify Google ID Token (from Google Identity Services One Tap / Credential response)
     if (credential) {
       try {
-        const payloadBase64 = credential.split('.')[1];
-        const decodedJson = Buffer.from(payloadBase64, 'base64').toString('utf8');
-        const decoded = JSON.parse(decodedJson);
-        userEmail = decoded.email || userEmail;
-        userName = decoded.name || userName || 'Google User';
-        userAvatar = decoded.picture || userAvatar;
-        gId = decoded.sub || gId;
+        const verifyRes = await axios.get(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`,
+          { timeout: 7000 }
+        );
+        const tokenInfo = verifyRes.data;
+
+        if (expectedClientId && tokenInfo.aud !== expectedClientId) {
+          console.warn(`[Google Auth Warning] Client ID mismatch: expected ${expectedClientId}, got ${tokenInfo.aud}`);
+        }
+
+        userEmail = tokenInfo.email;
+        userName = tokenInfo.name || userName;
+        userAvatar = tokenInfo.picture || userAvatar;
+        gId = tokenInfo.sub || gId;
       } catch (err) {
-        console.warn('[Google Auth] Token decode note:', err.message);
+        console.error('[Google Auth Error] ID token verification failed:', err.response?.data || err.message);
+        return res.status(401).json({
+          success: false,
+          message: 'Google ID token verification failed. The token is invalid or expired.',
+        });
       }
+    }
+    // 2. Verify Google OAuth Access Token (from initTokenClient popup flow)
+    else if (accessToken) {
+      try {
+        await axios.get(
+          `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+          { timeout: 7000 }
+        );
+
+        const profileRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 7000,
+        });
+        const profile = profileRes.data;
+
+        userEmail = profile.email;
+        userName = profile.name || userName;
+        userAvatar = profile.picture || userAvatar;
+        gId = profile.sub || gId;
+      } catch (err) {
+        console.error('[Google Auth Error] Access token verification failed:', err.response?.data || err.message);
+        return res.status(401).json({
+          success: false,
+          message: 'Google OAuth token verification failed.',
+        });
+      }
+    }
+    // 3. Fallback for development testing
+    else if (email && process.env.NODE_ENV !== 'production') {
+      userEmail = email;
+      userName = name || 'Google User';
+      userAvatar = picture || '';
+      gId = googleId || `sub-${Date.now()}`;
     }
 
     if (!userEmail) {
-      return res.status(400).json({ success: false, message: 'Google Authentication failed. Email is required.' });
+      return res.status(400).json({ success: false, message: 'Google Authentication failed. Verified email is required.' });
     }
 
     if (getDBStatus()) {
@@ -235,8 +282,13 @@ exports.googleLogin = async (req, res, next) => {
           name: userName || 'Google User',
           email: userEmail.toLowerCase(),
           password: `google_oauth_${Date.now()}_${Math.random()}`,
-          avatar: userAvatar,
+          avatar: userAvatar || '',
+          authProvider: 'google',
+          googleId: gId || null,
         });
+      } else if (!user.googleId && gId) {
+        user.googleId = gId;
+        await user.save();
       }
 
       const token = generateToken(user._id, user.email, user.role);

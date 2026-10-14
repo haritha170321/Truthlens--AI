@@ -117,6 +117,14 @@ const analysisSchema = new mongoose.Schema({
   supportingEvidence: [evidenceSchema],
   contradictingEvidence: [evidenceSchema],
   contextEvidence: [evidenceSchema],
+  searchMetadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+  googleFactCheck: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
   similarClaims: [{ type: mongoose.Schema.Types.Mixed }],
   similarArticles: [
     {

@@ -13,6 +13,7 @@ const {
   getSimilarClaims,
   submitFeedback,
   getMethodology,
+  searchGoogleFactCheck,
 } = require('../controllers/newsController');
 const { optionalAuth, protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -22,6 +23,8 @@ router.get('/demo-cases', getDemoCases);
 router.get('/methodology', getMethodology);
 router.post('/similar-claims', optionalAuth, getSimilarClaims);
 router.post('/feedback', optionalAuth, submitFeedback);
+router.post('/fact-check-search', optionalAuth, searchGoogleFactCheck);
+router.get('/fact-check-search', optionalAuth, searchGoogleFactCheck);
 
 // Analysis endpoints
 router.post('/analyze', optionalAuth, analyzeText);
